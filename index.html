@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Weekly Meal - Homekeeper</title>
+<link rel="stylesheet" href="css/styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="fi-modal" style="display:none;position:fixed;inset:0;background:rgba(26,26,46,0.6);z-index:9998;align-items:flex-end;justify-content:center">
+  <div style="background:#fff;border-radius:24px 24px 0 0;width:100%;max-width:480px;padding:24px 20px 40px">
+    <div style="font-weight:800;font-size:17px;margin-bottom:16px" id="fi-modal-title">재료 추가</div>
+    <div style="margin-bottom:10px">
+      <div class="sec" style="margin-bottom:4px">재료명</div>
+      <input id="fi-name" class="inp" style="width:100%;box-sizing:border-box" placeholder="예: 당근">
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <div style="flex:2">
+        <div class="sec" style="margin-bottom:4px">수량</div>
+        <input id="fi-qty" type="number" class="inp" style="width:100%;box-sizing:border-box">
+      </div>
+      <div style="flex:1">
+        <div class="sec" style="margin-bottom:4px">단위</div>
+        <select id="fi-unit" class="sel" style="width:100%;box-sizing:border-box">
+          <option>g</option><option>ml</option><option>개</option><option>큰술</option><option>봉지</option><option>마리</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-bottom:16px">
+      <div class="sec" style="margin-bottom:4px">유통기한(일)</div>
+      <input id="fi-exp" type="number" class="inp" style="width:100%;box-sizing:border-box" value="14">
+    </div>
+    <button class="btn-p" onclick="confirmFI()">추가하기</button>
+    <button onclick="document.getElementById('fi-modal').style.display='none'" style="width:100%;padding:12px;background:none;border:none;color:#aaa;font-size:14px;margin-top:6px">취소</button>
+  </div>
+</div>
+
+
+<script src="js/01-pre-ui-patches.js"></script>
+<script src="js/02-app-part1.js"></script>
+<script src="js/03-app-part2.js"></script>
+<script src="js/04-app-part3.js"></script>
+
+
+<script src="js/05-patch-2.js"></script>
+
+
+<script src="js/06-patch-3.js"></script>
+
+
+
+<script src="js/07-patch-4.js"></script>
+
+
+<script src="js/08-patch-5.js"></script>
+
+
+<script src="js/09-patch-6.js"></script>
+
+</body>
+</html>
