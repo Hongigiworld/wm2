@@ -1,3 +1,280 @@
+/* WM PATCH v7: Canonical menu source guard
+   목적:
+   - 메뉴 원본은 MENU_SCHEMA_V2 한 곳으로 고정
+   - MENU_DB / FLOW_STYLE_MENU_MAP / CLEAN_MENUS / MENUS / ALL_MENUS는 MENU_SCHEMA_V2 기준으로 정리
+   - 삭제된 메뉴가 영양DB나 자동완성에 남아 다시 튀어나오는 문제 차단
+   사용법:
+   - 메뉴를 완전히 숨기거나 삭제 처리하려면 아래 WM_DELETED_MENUS 배열에 메뉴명을 추가
+   - 메뉴를 실제로 추가/수정하려면 MENU_SCHEMA_V2를 수정
+   - 칼로리는 WM_MENU_NUTRITION_DB를 수정
+*/
+(function(){
+  if(window.WM_CANONICAL_MENU_GUARD && window.WM_CANONICAL_MENU_GUARD.applied) return;
+
+  // 여기에 삭제할 메뉴명을 계속 추가하면, 나머지 DB에 남아있어도 런타임에서 전부 차단됩니다.
+  window.WM_DELETED_MENUS = window.WM_DELETED_MENUS || [
+    // "양파라멘",
+    // "닭고기라멘",
+    // "이카먹물파스타"
+  ];
+
+  function getGlobal(name){
+    try{
+      if(window[name]) return window[name];
+      return (0,eval)(name);
+    }catch(e){
+      return window[name] || null;
+    }
+  }
+  function norm(v){
+    return String(v || '').trim().replace(/\s+/g,'').toLowerCase();
+  }
+  function arr(v){ return Array.isArray(v) ? v : []; }
+  function uniq(list){
+    var seen = {};
+    return arr(list).filter(function(x){
+      x = String(x || '').trim();
+      if(!x || seen[x]) return false;
+      seen[x] = true;
+      return true;
+    });
+  }
+  function isDeleted(name){
+    var n = norm(name);
+    return arr(window.WM_DELETED_MENUS).some(function(x){ return norm(x) === n; });
+  }
+  function ingredientName(id, ingDB){
+    return (ingDB && ingDB[id] && ingDB[id].name) ? ingDB[id].name : id;
+  }
+  function ingredientIcon(id, ingDB){
+    return (ingDB && ingDB[id] && ingDB[id].icon) ? ingDB[id].icon : '🛒';
+  }
+  function ingredientCategory(id, ingDB){
+    var c = (ingDB && ingDB[id] && ingDB[id].category) ? ingDB[id].category : '기타';
+    if(c === 'veg') return '채소';
+    if(c === 'protein') return '단백질';
+    if(c === 'grain') return '면·밥';
+    if(c === 'dairy') return '유제품';
+    if(c === 'fruit') return '과일';
+    if(c === 'sauce' || c === 'spice' || c === 'oil') return '양념';
+    return c;
+  }
+  function rebuildMenuDBFromSchema(){
+    var schema = getGlobal('MENU_SCHEMA_V2') || {};
+    var menuDB = getGlobal('MENU_DB') || {};
+    var ingDB = getGlobal('INGREDIENT_DB_V2') || {};
+    var nutrition = window.WM_MENU_NUTRITION_DB || getGlobal('WM_MENU_NUTRITION_DB') || {};
+
+    // 1) 원본 스키마에서도 삭제 목록 제거
+    Object.keys(schema).forEach(function(name){
+      if(isDeleted(name)) delete schema[name];
+    });
+
+    // 2) MENU_DB는 스키마 기준으로 완전 재생성
+    Object.keys(menuDB).forEach(function(k){ delete menuDB[k]; });
+
+    Object.keys(schema).forEach(function(name){
+      if(isDeleted(name)) return;
+      var row = schema[name] || {};
+      var ids = arr(row.ingredients || row.ingredientIds);
+      var amounts = row.ingredientAmounts || {};
+      var styles = uniq(row.styles || (row.style ? [row.style] : []));
+      var n = nutrition[name] || {};
+      var ingredients = ids.map(function(id){
+        return {
+          id:id,
+          name:ingredientName(id, ingDB),
+          amount:amounts[id] || (ingDB[id] && ingDB[id].defaultAmount) || '100g',
+          icon:ingredientIcon(id, ingDB),
+          category:ingredientCategory(id, ingDB)
+        };
+      });
+
+      menuDB[name] = Object.assign({}, row, {
+        name:name,
+        style:styles[0] || row.style || '',
+        styles:styles,
+        tags:uniq(row.tags || []),
+        cookTime:row.cookTime || 20,
+        ingredientIds:ids,
+        ingredients:ingredients,
+        servings:row.servings || 1,
+        recipeServings:row.recipeServings || row.servings || 1,
+        kcal:Number(n.kcal || n.cal || row.kcal || 0) || 0,
+        carb:Number(n.carb || row.carb || 0) || 0,
+        pro:Number(n.pro || row.pro || 0) || 0,
+        fat:Number(n.fat || row.fat || 0) || 0
+      });
+    });
+
+    return {schema:schema, menuDB:menuDB};
+  }
+  function rebuildStyleMapFromSchema(){
+    var schema = getGlobal('MENU_SCHEMA_V2') || {};
+    var styleMap = getGlobal('FLOW_STYLE_MENU_MAP') || {};
+    Object.keys(styleMap).forEach(function(k){ delete styleMap[k]; });
+
+    Object.keys(schema).forEach(function(name){
+      if(isDeleted(name)) return;
+      var row = schema[name] || {};
+      var styles = uniq(row.styles || (row.style ? [row.style] : []));
+      styles.forEach(function(st){
+        if(!styleMap[st]) styleMap[st] = [];
+        if(styleMap[st].indexOf(name) < 0) styleMap[st].push(name);
+      });
+    });
+    return styleMap;
+  }
+  function cleanMenuArrays(){
+    var schema = getGlobal('MENU_SCHEMA_V2') || {};
+    var allowed = {};
+    Object.keys(schema).forEach(function(n){ if(!isDeleted(n)) allowed[n] = true; });
+
+    ['CLEAN_MENUS','MENUS','ALL_MENUS'].forEach(function(key){
+      var list = getGlobal(key);
+      if(!Array.isArray(list)) return;
+      var filtered = list.filter(function(x){
+        var name = typeof x === 'string' ? x : (x && (x.name || x.menu || x.title || x.krName || x.koName)) || '';
+        return !!allowed[name] && !isDeleted(name);
+      });
+      list.splice(0, list.length);
+      filtered.forEach(function(x){ list.push(x); });
+    });
+  }
+  function installNutritionGuard(){
+    var oldCalc = window.calcNutrition;
+    var oldNut = window.getMenuNut;
+    function resolveNutritionKey(name){
+      var raw = String(name || '').trim();
+      var schema = getGlobal('MENU_SCHEMA_V2') || {};
+      var db = window.WM_MENU_NUTRITION_DB || getGlobal('WM_MENU_NUTRITION_DB') || {};
+      if(!raw || isDeleted(raw)) return null;
+      if(!schema[raw]) {
+        var compact = norm(raw);
+        var skeys = Object.keys(schema);
+        for(var i=0;i<skeys.length;i++){
+          if(norm(skeys[i]) === compact && !isDeleted(skeys[i])) { raw = skeys[i]; break; }
+        }
+      }
+      if(!schema[raw]) return null;
+      if(db[raw]) return raw;
+      var keys = Object.keys(db);
+      var nraw = norm(raw);
+      for(var j=0;j<keys.length;j++){
+        if(norm(keys[j]) === nraw) return keys[j];
+      }
+      return null;
+    }
+    function fromMenuDB(name, people){
+      var key = resolveNutritionKey(name);
+      var db = window.WM_MENU_NUTRITION_DB || getGlobal('WM_MENU_NUTRITION_DB') || {};
+      if(!key || !db[key]){
+        return {
+          cal:0,kcal:0,carb:0,pro:0,fat:0,
+          calRange:'0kcal',verified:false,
+          source:'MENU_SCHEMA_V2 기준 미등록 또는 삭제됨',
+          menuName:String(name || '')
+        };
+      }
+      var n = db[key];
+      var p = Math.max(1, Number(people) || 1);
+      var cal = Math.round(Number(n.kcal || n.cal || 0) * p);
+      return {
+        cal:cal,kcal:cal,
+        calLo:Math.round(cal * 0.95),
+        calHi:Math.round(cal * 1.05),
+        calRange:Math.round(cal * 0.95) + '~' + Math.round(cal * 1.05) + 'kcal',
+        carb:Math.round(Number(n.carb || 0) * p),
+        pro:Math.round(Number(n.pro || 0) * p),
+        fat:Math.round(Number(n.fat || 0) * p),
+        portionG:n.portionG || null,
+        enName:n.enName || '',
+        verified:true,
+        source:'메뉴별 검증 영양DB',
+        menuName:key
+      };
+    }
+    window.getMenuNut = function(name){ return fromMenuDB(name, 1); };
+    window.calcNutrition = function(name, people){ return fromMenuDB(name, people || 1); };
+    window.kcalText = function(name){
+      var n = fromMenuDB(name, 1);
+      return n && n.cal ? (n.calRange || (n.cal + 'kcal')) : '';
+    };
+  }
+  function installMenuNameResolver(){
+    var oldFlow = window.flowMenuDBName;
+    window.flowMenuDBName = function(name){
+      var raw = String(name || '').trim();
+      if(!raw || isDeleted(raw)) return '';
+      var schema = getGlobal('MENU_SCHEMA_V2') || {};
+      if(schema[raw]) return raw;
+      try{
+        if(window.NAME_MAP && window.NAME_MAP[raw] && schema[window.NAME_MAP[raw]] && !isDeleted(window.NAME_MAP[raw])) return window.NAME_MAP[raw];
+      }catch(e){}
+      var compact = norm(raw);
+      var keys = Object.keys(schema);
+      for(var i=0;i<keys.length;i++){
+        if(norm(keys[i]) === compact && !isDeleted(keys[i])) return keys[i];
+      }
+      if(typeof oldFlow === 'function'){
+        var mapped = oldFlow(raw);
+        if(mapped && schema[mapped] && !isDeleted(mapped)) return mapped;
+      }
+      return '';
+    };
+  }
+  function auditDeletedResidue(){
+    var deleted = arr(window.WM_DELETED_MENUS);
+    var sources = {
+      MENU_SCHEMA_V2:getGlobal('MENU_SCHEMA_V2') || {},
+      MENU_DB:getGlobal('MENU_DB') || {},
+      FLOW_STYLE_MENU_MAP:getGlobal('FLOW_STYLE_MENU_MAP') || {},
+      WM_MENU_NUTRITION_DB:window.WM_MENU_NUTRITION_DB || getGlobal('WM_MENU_NUTRITION_DB') || {}
+    };
+    var found = [];
+    deleted.forEach(function(name){
+      Object.keys(sources).forEach(function(src){
+        var obj = sources[src];
+        if(!obj) return;
+        if(src === 'FLOW_STYLE_MENU_MAP'){
+          Object.keys(obj).forEach(function(st){
+            if(arr(obj[st]).some(function(x){ return norm(x) === norm(name); })) found.push({menu:name, source:src, at:st});
+          });
+        }else{
+          Object.keys(obj).forEach(function(k){
+            if(norm(k) === norm(name)) found.push({menu:name, source:src, at:k});
+          });
+        }
+      });
+    });
+    window.WM_DELETED_MENU_RESIDUE = found;
+    if(found.length) console.warn('[WM canonical guard] deleted menu residue remains in non-canonical DB:', found);
+  }
+
+  rebuildMenuDBFromSchema();
+  rebuildStyleMapFromSchema();
+  cleanMenuArrays();
+  installNutritionGuard();
+  installMenuNameResolver();
+  auditDeletedResidue();
+
+  window.WM_CANONICAL_MENU_GUARD = {
+    applied:true,
+    source:'MENU_SCHEMA_V2',
+    rebuild:function(){
+      rebuildMenuDBFromSchema();
+      rebuildStyleMapFromSchema();
+      cleanMenuArrays();
+      installNutritionGuard();
+      installMenuNameResolver();
+      auditDeletedResidue();
+      console.info('[WM canonical guard] rebuilt from MENU_SCHEMA_V2');
+    }
+  };
+  console.info('[WM canonical guard] MENU_SCHEMA_V2 is the single menu source. MENU_DB/FLOW_STYLE_MENU_MAP/search arrays rebuilt.');
+})();
+
+
 /* WM PATCH v6: C Flow autocomplete optimized final
    - 기존 06/07/08 자동완성 패치는 비활성화하고 이 파일 하나만 사용
    - 검색 인덱스 최초 1회 생성 + 150ms debounce
@@ -73,7 +350,7 @@
     if(INDEX) return INDEX;
 
     var raw = {};
-    try{ Object.keys(window.WM_MENU_NUTRITION_DB || {}).forEach(function(n){ addRaw(raw,n); }); }catch(e){}
+    /* Canonical source only: deleted/stale menus left in nutrition DB must not appear. */
     try{ Object.keys(window.MENU_DB || {}).forEach(function(n){ addRaw(raw,n); }); }catch(e){}
     try{ Object.keys(window.MENU_SCHEMA_V2 || {}).forEach(function(n){ addRaw(raw,n); }); }catch(e){}
     try{ arr(window.CLEAN_MENUS).forEach(function(x){ addRaw(raw, nameOf(x)); }); }catch(e){}
