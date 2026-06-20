@@ -1,4 +1,11 @@
-
+function startOfNextMonday(){
+  const d = new Date();
+  const day = d.getDay(); // 일=0, 월=1
+  const diff = ((8 - day) % 7) || 7;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0,0,0,0);
+  return d;
+}
 function ensureScheduleReady(){
   if(!S.schedule || typeof S.schedule !== 'object') S.schedule = {};
   let count = 0;
@@ -29,7 +36,7 @@ function flowCreatePlan(menus,tip){
     weeklyMeal.push({day,meals});
   }
   S.mealPlan={weeklyMeal,tip:tip||''};
-  S.mealStartDate=getThisMonday();
+S.mealStartDate = dateKey(startOfNextMonday());
   flowCreateCalendar(menus);
   saveMeal();
   localStorage.setItem('wm_cal',JSON.stringify(S.mealCalendar||{}));
@@ -39,7 +46,10 @@ function flowCreateCalendar(menus){
   ensureScheduleReady();
   menus=[...new Set((menus||[]).map(m=>flowMenuDBName(m)).filter(n=>MENU_DB[n]))];
   const cal={}; let idx=0;
-  const start=new Date(); start.setDate(start.getDate()+1);
+const start = new Date();
+const day = start.getDay(); // 일=0, 월=1
+const diffToNextMonday = ((8 - day) % 7) || 7;
+start.setDate(start.getDate() + diffToNextMonday);
   const days=totalDays();
   for(let i=0;i<days;i++){
     const d=new Date(start); d.setDate(start.getDate()+i);
